@@ -10,15 +10,15 @@ DO NOT USE THIS FOR YOUR HOMEWORK.
 
 # Source code
 
-src/theads: 
+- `src/threads`: main part of the code you need to add and modify
 
-`src/device` :  only need to modify `timer.c`
+- `src/device` :  only need to modify `timer.c`
 
-`src/lib/kernel`:  C libraries, `list.c` is specially important
+- `src/lib/kernel`:  C libraries, `list.c` is specially important
 
-`src/tests`: the test code 
+- `src/tests`: the test code 
 
-`init.c`:  kernel initialization
+- `init.c`:  kernel initialization entry
 
 # Run and Test
 
@@ -37,10 +37,8 @@ Includes three parts:
 - Priority Scheduling
 - Advanced Scheduler
 
-## Key requirements and code hints:
-### Request
-
-- pirority shcheduling:
+## Some Key Requirements
+### pirority shcheduling:
     - interface:
         - `thread_set_priority()`
             - It sets the thread's base priority.
@@ -61,12 +59,14 @@ Includes three parts:
     - for a lock, semaphore, or condition variable, the highest priority waiting thread should be awakened first.
         - when a lock is released, the highest priority thread waiting for that lock should be unblocked and put on the list of ready threads.
         - The scheduler should then run the highest priority thread on the ready list.
-- priority donation: only for locks
+### priority donation: only for locks
     - single donation:
         - a thread's priority can be changed while it is on the `ready_list` due to a donation.
         - a thread's priority can be changed while it is blocked on a semaphore...
     - multiple donation: multiple priorities are donated to a single thread
     - nested donation: all thread on a lock chain boosted to the highest priority
+
+## Overview Of My Design
 
 ### Process Priority
 
