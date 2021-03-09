@@ -20,6 +20,9 @@
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
+/* Waitlist for timer.sleep(). */
+static struct list sleep_wait_list;
+
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
 static unsigned loops_per_tick;
@@ -37,6 +40,7 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  list_init(&sleep_wait_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -87,13 +91,21 @@ timer_elapsed (int64_t then)
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void
-timer_sleep (int64_t ticks) 
+timer_sleep (int64_t _ticks) 
 {
-  int64_t start = timer_ticks ();
+  struct thread *t = thread_current();
+  if (_ticks <= 0) 
+    return;
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+
+  enum intr_level old_level = intr_disable();
+  t->wakeup_time = ticks + _ticks;
+  /* Add current thread to right position of sleep_wait_list. */
+  list_insert_ordered(&sleep_wait_list, &t->timer_elem, alarm_clock_less, NULL);
+  /* Block the current thread. */
+  thread_block();
+  intr_set_level(old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -166,12 +178,41 @@ timer_print_stats (void)
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
 
-/* Timer interrupt handler. */
+/* Timer interrupt handler. In External Interrupt. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
+  struct thread* t;
+
+  /* Increment time ticks of current thread. */
   ticks++;
   thread_tick ();
+
+  /* Wakeup all expired sleeping threads. */
+  /* Note: preemptive schedule is not required here. */
+  while (!list_empty(&sleep_wait_list)) {
+    t = list_entry(list_front(&sleep_wait_list), struct thread, timer_elem);
+    if (t->wakeup_time > ticks)
+      break;
+    list_pop_front(&sleep_wait_list);
+    thread_unblock(t);
+  }
+
+  if (thread_mlfqs)
+  {
+    /* Update values for MLFQ Schedule. */
+    thread_increment_recent_cpu();
+    if (timer_ticks() % TIMER_FREQ == 0) 
+    {
+      thread_update_load_avg();
+      thread_update_recent_cpu();
+    }
+    if (timer_ticks() % 4 == 0) 
+    {
+      thread_update_mlfq_priority();
+      preempt_priority_schedule();
+    }
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

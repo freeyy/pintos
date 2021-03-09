@@ -55,7 +55,8 @@ test_mlfqs_nice_10 (void)
 
 struct thread_info 
   {
-    int64_t start_time;
+    // int64_t start_time;
+    int start_time;
     int tick_count;
     int nice;
   };

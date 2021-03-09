@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "fixed-point.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -86,12 +87,21 @@ struct thread
     tid_t tid;                          /* Thread identifier. */
     enum thread_status status;          /* Thread state. */
     char name[16];                      /* Name (for debugging purposes). */
-    uint8_t *stack;                     /* Saved stack pointer. */
+    uint8_t *stack;                     /* Saved stack pointer. (on context switch) */
     int priority;                       /* Priority. */
+    int base_priority;                  /* Priority before donation. */
     struct list_elem allelem;           /* List element for all threads list. */
+    fix recent_cpu;                     /* Recent cpu value for MLFQS. */
+    int nice;                           /* Nice value for MLFQS. */
 
     /* Shared between thread.c and synch.c. */
-    struct list_elem elem;              /* List element. */
+    struct list_elem elem;              /* List element. for ready_list and semaphore*/
+    struct list locks_holding_list;     /* List of locks held (for multiple priority donation)*/
+    struct lock *lock_waiting;          /* The lock thread is waiting to acquire (for nested priority donation). */
+
+    /* Shared between thread.c and timer.c. */
+    int64_t wakeup_time;                /* Saved wakeup time of the thread for timer_sleep(). */
+    struct list_elem timer_elem;        /* List element for sleep_waitlist. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -118,6 +128,8 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
+void thread_unblock_preempt (struct thread *);
+void preempt_priority_schedule ();
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
@@ -137,5 +149,19 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+/* Compare functions. */
+bool alarm_clock_less (const struct list_elem *a, const struct list_elem *b, void *aux);
+bool thread_priority_more (const struct list_elem *a, const struct list_elem *b, void *aux);
+bool thread_priority_less (const struct list_elem *a, const struct list_elem *b, void *aux);
+
+/* For donated priority schedule. */
+void thread_effective_priority_set(struct thread *t);
+
+/* For MLFQ schedule. */
+void thread_update_mlfq_priority();
+void thread_increment_recent_cpu();
+void thread_update_recent_cpu ();
+void thread_update_load_avg();
 
 #endif /* threads/thread.h */

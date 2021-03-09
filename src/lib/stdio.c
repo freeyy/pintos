@@ -90,6 +90,14 @@ printf (const char *format, ...)
 
 /* printf() formatting internals. */
 
+/* Implementation of scanf() */
+int
+scanf (const char *format, ...)
+{
+  
+}
+
+
 /* A printf() conversion. */
 struct printf_conversion 
   {

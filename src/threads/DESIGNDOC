@@ -1,0 +1,265 @@
+			+--------------------+
+			|    CompSci 143A    |
+			| PROJECT 1: THREADS |
+			|   DESIGN DOCUMENT  |
+			+--------------------+
+				   
+---- GROUP ----
+
+>> Fill in the names and email addresses of your group members.
+
+SHIYE YAN <shiyey@uci.edu>
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission or notes for the
+>> TAs, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+			     ALARM CLOCK
+			     ===========
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+
+[timer.c]
+/* Stores threads sleeping. */
+struct list sleep_wait_list
+
+[struct thread]
+/* Saved wakeup time of the thread for timer_sleep(). */
+int64_t wakeup_time;                
+
+/* List element for sleep_waitlist. */
+struct list_elem timer_elem;        
+
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe what happens in a call to timer_sleep(),
+>> including the effects of the timer interrupt handler.
+
+Current thread is inserted into sleep_wait_list using ordered_insert(), and then blocked.
+
+>> A3: What steps are taken to minimize the amount of time spent in
+>> the timer interrupt handler?
+
+The sleep_wait_list is maintained to be ordered on t->wakeup_time so that at the timer interrupt, only needs to check time-out threads from the front of the list.
+
+
+---- SYNCHRONIZATION ----
+
+>> A4: How are race conditions avoided when multiple threads call
+>> timer_sleep() simultaneously?
+
+Turn off interrupt around list_insert(&ready_list).
+
+>> A5: How are race conditions avoided when a timer interrupt occurs
+>> during a call to timer_sleep()?
+
+Turn off interrupt around list_insert(&ready_list).
+
+---- RATIONALE ----
+
+>> A6: Why did you choose this design?  In what ways is it superior to
+>> another design you considered?
+
+Since the timer_interrupt is called frequently, I wanna do as little work
+as possible in it.
+
+
+			 PRIORITY SCHEDULING
+			 ===================
+
+---- DATA STRUCTURES ----
+
+>> B1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+[thread.c]
+struct sema priority_sema;      /* Semaphore to prevent race on priority change. */
+
+[struct thread]
+int base_priority;                  /* Priority before donation. */
+struct list_elem elem;              /* List element. for ready_list and semaphore*/
+struct list locks_holding_list;     /* List of locks held (for multiple priority donation)*/
+struct lock *lock_waiting;          /* The lock thread is waiting to acquire (for nested priority donation). */
+
+[struct lock]
+int priority;               /* Equals to the highest-priority waiting thread. */
+struct list_elem elem;      /* List element of t->held_lock_list */
+
+
+>> B2: Explain the data structure used to track priority donation.
+>> Use ASCII art to diagram a nested donation.  (Alternately, submit a
+>> .png file.)
+
+THe idea is to use lock->priority as a media of priority donation.
+- lock->priority = max (waiting threads priority)
+- thread->effective_priority = max(base priority, max_lock_priority(thread->locks_holding_list))
+
+
+[(A [20->26])--(Lock [26])] <--- [(B[24->26])--(Lock [26])] <--- (C [26])
+
+---- ALGORITHMS ----
+
+>> B3: How do you ensure that the highest priority thread waiting for
+>> a lock, semaphore, or condition variable wakes up first?
+
+Always wakes up the thread with highest priority in the waiters list,
+with list_max().
+
+>> B4: Describe the sequence of events when a call to lock_acquire()
+>> causes a priority donation.  How is nested donation handled?
+
+- nested donation is performed if lock is already occupied, 
+	- reset each lock's priority to max(lock->waiters->priroity), i.e. t->priority
+	- reset lock's holder's priority to max(holding-locks->priority)
+- sema_down(), current thread may block
+- current thread resumes and gets the lock
+
+>> B5: Describe the sequence of events when lock_release() is called
+>> on a lock that a higher-priority thread is waiting for.
+
+- sema_up()
+- remove lock from thread's locks_holding_list, and reset lock priority
+- reset thread's effective priority
+- yield current thread if it is no longer the highest priority one.
+
+---- SYNCHRONIZATION ----
+
+>> B6: Describe a potential race in thread_set_priority() and explain
+>> how your implementation avoids it.  Can you use a lock to avoid
+>> this race?
+
+Race may happen when two threads, running in thread_set_priority() and lock_acquire(),
+try try set a same thread's priority. Lock is not available since lock_acquire() is also in race.
+
+I use a semaphore to capsulate thread_effective_priority_set() to ensure synchronization.
+
+---- RATIONALE ----
+
+>> B7: Why did you choose this design?  In what ways is it superior to
+>> another design you considered?
+
+Using lock->priority as a media makes the overall code logic easy to
+understand, helps me to avoid mistakes when implementing donation.
+
+
+			  ADVANCED SCHEDULER
+			  ==================
+
+---- DATA STRUCTURES ----
+
+>> C1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+[thread.c]
+fix load_avg;                   /* For MLFQS. */
+
+[struct thread]
+fix recent_cpu;                     /* For MLFQ scheduling. */
+int nice;                           /* Nice value of MLFQ. */
+
+[fixed-point.h]
+typedef int32_t fix;				/* Fixed-point type. */
+
+---- ALGORITHMS ----
+
+>> C2: Suppose threads A, B, and C have nice values 0, 1, and 2.  Each
+>> has a recent_cpu value of 0.  Fill in the table below showing the
+>> scheduling decision and the priority and recent_cpu values for each
+>> thread after each given number of timer ticks:
+
+timer  recent_cpu      priority        thread
+ticks   A   B   C     A      B     C   to run
+-----  --  --   --   ---   ---   ---   ------
+0      0   0    0   63.00 61.00 59.00   A
+4      4   0    0   62.00 61.00 59.00   A
+8      8   0    0   61.00 61.00 59.00   A
+12     12  0    0   60.00 61.00 59.00   B
+16     12  4    0   60.00 60.00 59.00   B
+20     12  8    0   60.00 59.00 59.00   A
+24     16  8    0   59.00 59.00 59.00   A
+28     20  8    0   58.00 59.00 59.00   C
+32     20  8    4   58.00 59.00 58.00   B
+36     20  12   4   58.00 58.00 58.00   B
+
+>> C3: Did any ambiguities in the scheduler specification make values
+>> in the table uncertain?  If so, what rule did you use to resolve
+>> them?  Does this match the behavior of your scheduler?
+
+The specification doesn't specify the order of updating theses values.
+In my implementation, I use the order [load_avg->recent_cpu->priority]
+because this makes sure I am always using the newest value to update 
+another value based on it. 
+
+>> C4: How is the way you divided the cost of scheduling between code
+>> inside and outside interrupt context likely to affect performance?
+
+Most of the scheduling happens in interrupt context in my design, which
+has a non-ignorable influence on performance.
+
+---- RATIONALE ----
+
+>> C5: Briefly critique your design, pointing out advantages and
+>> disadvantages in your design choices.  If you were to have extra
+>> time to work on this part of the project, how might you choose to
+>> refine or improve your design?
+
+I implemented MLFQS with the given ready_list, which makes it easy to
+reuse the previous code and keeps the logic tidy. However, the ready_list 
+in the previous code is always kept ordered on priority, so that I have to 
+follow this manner, which requires a slow sort(&ready_list) after every 
+priority update. 
+
+A good way to improve it is to give up keeping the order of ready_list, 
+and keep track of the max priority thread everytime do MLFQS priority update.
+
+>> C6: The assignment explains arithmetic for fixed-point math in
+>> detail, but it leaves it open to you to implement it.  Why did you
+>> decide to implement it the way you did?  If you created an
+>> abstraction layer for fixed-point math, that is, an abstract data
+>> type and/or a set of functions or macros to manipulate fixed-point
+>> numbers, why did you do so?  If not, why not?
+
+I use typedef to define a new type [fix] based on [int32_t] and then 
+marcro function to provide abstraction. The advantage of my design is
+that it only needs to add a single header file to the existing project,
+also it avoids real function call so may perform better.
+
+			   SURVEY QUESTIONS
+			   ================
+
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+No.
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+Part two.
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+Better to provide a way of debugging Pintos with IDEs like VSCode.
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students, either for future quarters or the remaining projects?
+
+>> Any other comments?

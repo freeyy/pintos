@@ -63,6 +63,8 @@ static void paging_init (void);
 static char **read_command_line (void);
 static char **parse_options (char **argv);
 static void run_actions (char **argv);
+static void run_interactive();
+static void read_line(char[], size_t);
 static void usage (void);
 
 #ifdef FILESYS
@@ -134,6 +136,7 @@ pintos_init (void)
     run_actions (argv);
   } else {
     // TODO: no command line passed to kernel. Run interactively 
+    run_interactive ();
   }
 
   /* Finish up. */
@@ -346,6 +349,61 @@ run_actions (char **argv)
     }
   
 }
+
+/* Run a interactive shell*/
+static void run_interactive()
+{
+  char command[80];
+  while (true) {
+    printf("ICS143A> ");
+    // get command from user input
+    read_line(command, sizeof command);
+    // execute command
+    if (!strcmp(command, "exit")) {
+      return;
+    } else if (!strcmp(command, "whoami")) {
+      printf("Shiye Yan\n");
+    } else {
+      printf("invalid command\n");
+    }
+  }
+} 
+
+static void read_line (char line[], size_t size) {
+    char* cursor = line;  // the next pos to print
+    while (true) {
+      // print and store each key inputted
+      uint8_t key = input_getc();
+      switch (key)
+      {
+        case '\r':  // press Enter
+        case '\n':
+          *cursor = '\0';
+          putchar('\n');
+          return;
+
+        case '\b':  // press BackSpace
+          if (cursor > line) 
+          {
+            printf("\b \b");
+            cursor--;
+          }
+          break;
+
+        default:
+          if (key < 32 || key > 127) {  // skip unprintable character
+            break;
+          }
+          if (cursor < line + size - 1) // preserve one slot for '\0'
+          {
+            putchar(key);
+            *cursor++ = key;
+          }
+          break;
+      }
+    }
+}
+
 
 /* Prints a kernel command line help message and powers off the
    machine. */
